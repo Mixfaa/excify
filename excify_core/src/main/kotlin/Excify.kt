@@ -3,5 +3,5 @@ abstract class NoStacktraceThrowable(msg: String) : java.lang.Throwable(msg, nul
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class ExcifyException(
-    val cached: Boolean = false
+    val canBeCached: Boolean = false
 )
