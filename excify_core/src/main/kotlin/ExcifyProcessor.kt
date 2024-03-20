@@ -5,6 +5,8 @@ import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.ParameterSpec
+import com.squareup.kotlinpoet.ksp.toClassName
+import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
 
 val KSClassDeclaration.companionObject: KSClassDeclaration?
@@ -21,10 +23,8 @@ val KSClassDeclaration.isValue
 
 fun KSValueParameter.asModifiers(): Iterable<KModifier> {
     return buildList {
-        if (this@asModifiers.isVararg)
-            add(KModifier.VARARG)
-        if (this@asModifiers.isCrossInline)
-            add(KModifier.CROSSINLINE)
+        if (this@asModifiers.isVararg) add(KModifier.VARARG)
+        if (this@asModifiers.isCrossInline) add(KModifier.CROSSINLINE)
     }
 }
 
@@ -34,13 +34,11 @@ class ExcifyProcessor(
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val annotatedClasses = resolver.getSymbolsWithAnnotation(ExcifyException::class.qualifiedName!!)
-            .filterIsInstance<KSClassDeclaration>()
-            .toSet()
+            .filterIsInstance<KSClassDeclaration>().toSet()
 
 
         for (klass in annotatedClasses) {
-            makeFile(klass)
-                .writeTo(codeGenerator, Dependencies(true))
+            makeFile(klass).writeTo(codeGenerator, Dependencies(true))
         }
 
         return emptyList()
@@ -49,35 +47,39 @@ class ExcifyProcessor(
     fun makeFile(klass: KSClassDeclaration): FileSpec {
         val packageName = klass.packageName.asString()
 
-        val companionObject = klass.companionObject!!.javaClass.kotlin
+        val companionObject = klass.companionObject!!.toClassName()
 
-        return FileSpec.builder(packageName, "excify_gen_exceptions")
-            .apply {
+        return FileSpec.builder(packageName, "excify_${klass.toClassName().simpleName}").apply {
                 klass.getConstructors().forEach { constructor ->
-                    addFunction(
-                        FunSpec.builder("make")
-                            .receiver(companionObject)
-                            .let { funcBuilder ->
+                    addFunction(FunSpec.builder("make").receiver(companionObject).let { funcBuilder ->
+
+                            constructor.parameters.forEach { param ->
+                                funcBuilder.addParameter(
+                                    ParameterSpec.builder(
+                                        name = param.name!!.getShortName(),
+                                        type = param.type.toTypeName(),
+                                        modifiers = param.asModifiers()
+                                    ).build()
+                                )
+                            }
+
+                            funcBuilder
+                        }.returns(Throwable::class).let { builder ->
+                            val returnStatement = buildString {
+                                append("return %T(")
 
                                 constructor.parameters.forEach { param ->
-                                    funcBuilder.addParameter(
-                                        ParameterSpec.builder(
-                                            name = param.name!!.asString(),
-                                            type = param.type.javaClass.kotlin,
-                                            modifiers = param.asModifiers()
-                                        ).build()
-                                    )
+                                    append(param.name!!.getShortName())
+                                    append(", ") // kotlin don`t care
                                 }
 
-                                funcBuilder
+                                append(") as Throwable")
                             }
-                            .returns(Throwable::class)
-                            .addStatement("return %T(%P) as Throwable")
-                            .build()
-                    )
+
+                            builder.addStatement(returnStatement, klass.toClassName())
+                        }.build())
                 }
-            }
-            .build()
+            }.build()
     }
 }
 
