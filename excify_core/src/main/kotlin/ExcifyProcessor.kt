@@ -2,7 +2,9 @@ import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSValueParameter
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
@@ -20,6 +22,7 @@ fun KSValueParameter.asModifiers(): Iterable<KModifier> {
 
 class ExcifyProcessor(
     private val codeGenerator: CodeGenerator,
+    private val logger: KSPLogger
 ) : SymbolProcessor {
 
     @OptIn(KspExperimental::class)
@@ -30,7 +33,7 @@ class ExcifyProcessor(
 
         for (klass in annotatedClasses) {
             run {
-                if (klass.getAnnotationsByType(ExcifyException::class).first().canBeCached)
+                if (klass.getAnnotationsByType(ExcifyException::class).first().cacheNoArgs)
                     makeCached(klass)
                 else
                     makeSimple(klass)
@@ -41,13 +44,19 @@ class ExcifyProcessor(
     }
 
     fun makeCached(klass: KSClassDeclaration): FileSpec {
+        val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
+            ?: run {
+                logger.error("No args constructor not found")
+                throw Exception("No args constructor not found")
+            }
+
         val packageName = klass.packageName.asString()
 
         val className = klass.toClassName()
         val companionObject = klass.findCompanionObject()!!.toClassName()
 
-        return FileSpec.builder(packageName, "excify_${className.simpleName}").apply {
-            addProperty(
+        return FileSpec.builder(packageName, "excify_${className.simpleName}")
+            .addProperty(
                 PropertySpec.builder(
                     name = "cachedException",
                     type = Throwable::class,
@@ -57,26 +66,25 @@ class ExcifyProcessor(
                     .initializer("%T() as Throwable", className)
                     .build()
             )
-            klass.getConstructors().forEach { constructor ->
-                addFunction(FunSpec.builder("make").receiver(companionObject).let { funcBuilder ->
-
-                    constructor.parameters.forEach { param ->
-                        funcBuilder.addParameter(
-                            ParameterSpec.builder(
-                                name = param.name!!.getShortName(),
-                                type = param.type.toTypeName(),
-                                modifiers = param.asModifiers()
-                            ).build()
-                        )
+            .addFunction(
+                FunSpec.builder("make")
+                    .receiver(companionObject).also { funcBuilder ->
+                        noArgsConstructor.parameters.forEach { param ->
+                            funcBuilder.addParameter(
+                                ParameterSpec.builder(
+                                    name = param.name!!.getShortName(),
+                                    type = param.type.toTypeName(),
+                                    modifiers = param.asModifiers()
+                                ).build()
+                            )
+                        }
                     }
-
-                    funcBuilder
-                }.returns(Throwable::class).let { builder ->
-                    val returnStatement = "return cachedException"
-                    builder.addStatement(returnStatement)
-                }.build())
-            }
-        }.build()
+                    .returns(Throwable::class).let { builder ->
+                        val returnStatement = "return cachedException"
+                        builder.addStatement(returnStatement)
+                    }.build()
+            )
+            .build()
     }
 
     fun makeSimple(klass: KSClassDeclaration): FileSpec {
@@ -124,6 +132,6 @@ class BuilderProcessorProvider : SymbolProcessorProvider {
     override fun create(
         environment: SymbolProcessorEnvironment
     ): SymbolProcessor {
-        return ExcifyProcessor(environment.codeGenerator)
+        return ExcifyProcessor(environment.codeGenerator, environment.logger)
     }
 }

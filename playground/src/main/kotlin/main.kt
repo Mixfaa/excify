@@ -1,22 +1,25 @@
-
-@ExcifyException(canBeCached = true)
-class SomeException : NoStacktraceThrowable("msg") {
+@ExcifyException(cacheNoArgs = true)
+class SomeException : LightweightThrowable("SomeException") {
     companion object
 }
 
 @ExcifyException
-class SomeException2(msg: String) : NoStacktraceThrowable(msg) {
+class SomeException2(msg: String) : LightweightThrowable(msg) {
     companion object
 }
 
-class NotFoundException(subject: String) : NoStacktraceThrowable("$subject not found") {
+fun SomeException2.Companion.userNotFound() = SomeException2("user")
+
+class NotFoundException(subject: String) : LightweightThrowable("$subject not found") {
     companion object
 }
 
 fun main() {
+
+    SomeException.make()
     val ex0 = SomeException.make()
-    val ex1 = SomeException2.make("hello")
-    val ex2 = SomeException2.make("hello")
+    val ex1 = SomeException2.userNotFound()
+    val ex2 = SomeException2.userNotFound()
 
     println(ex1 == ex2)
 
