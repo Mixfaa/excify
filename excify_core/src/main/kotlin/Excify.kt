@@ -12,8 +12,11 @@ annotation class ExcifyCached(
     val methodName: String = ""
 )
 
-
-interface JsonSerializer {
-    fun serialize(obj: Any): String
-}
-
+//
+//interface JsonSerializer {
+//    fun serialize(obj: Any): String
+//}
+//
+//@Retention(AnnotationRetention.SOURCE)
+//@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FUNCTION)
+//annotation class ExcifyJsonSerializer

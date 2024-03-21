@@ -2,10 +2,7 @@ import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.KSAnnotated
-import com.google.devtools.ksp.symbol.KSClassDeclaration
-import com.google.devtools.ksp.symbol.KSPropertyDeclaration
-import com.google.devtools.ksp.symbol.KSValueParameter
+import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
@@ -35,17 +32,12 @@ class ExcifyProcessor(
 
     @OptIn(KspExperimental::class)
     override fun process(resolver: Resolver): List<KSAnnotated> {
+
         val annotatedClasses = resolver.getSymbolsWithAnnotation(ExcifyException::class.qualifiedName!!)
             .filterIsInstance<KSClassDeclaration>().toSet()
 
         val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCached::class.qualifiedName!!, true)
             .filterIsInstance<KSPropertyDeclaration>().toSet()
-
-        cachedExceptions.forEach {
-//            logger.warn(it.type.toString())
-//            logger.warn(it.getter!!.returnType!!.toString())
-        }
-
 
         for (klass in annotatedClasses) {
             val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
@@ -172,7 +164,6 @@ class ExcifyProcessor(
                     )
                     .addImport(cachedException.packageName.asString(), cachedException.qualifiedName!!.asString())
             }
-
 
         return fileBuilder.build()
     }
