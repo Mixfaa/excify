@@ -4,6 +4,7 @@ import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSValueParameter
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ksp.toClassName
@@ -25,51 +26,95 @@ class ExcifyProcessor(
     private val logger: KSPLogger
 ) : SymbolProcessor {
 
+    private fun makeFileBuilderFor(klass: KSClassDeclaration): Pair<FileSpec.Builder, ClassName> {
+        val packageName = klass.packageName.asString()
+        val className = klass.toClassName()
+
+        return FileSpec.builder(packageName, "excify_${className.simpleName}") to className
+    }
+
     @OptIn(KspExperimental::class)
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val annotatedClasses = resolver.getSymbolsWithAnnotation(ExcifyException::class.qualifiedName!!)
             .filterIsInstance<KSClassDeclaration>().toSet()
 
+        val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCached::class.qualifiedName!!, true)
+            .filterIsInstance<KSPropertyDeclaration>().toSet()
+
+        cachedExceptions.forEach {
+//            logger.warn(it.type.toString())
+//            logger.warn(it.getter!!.returnType!!.toString())
+        }
+
 
         for (klass in annotatedClasses) {
-            run {
-                if (klass.getAnnotationsByType(ExcifyException::class).first().cacheNoArgs)
-                    makeCached(klass)
-                else
-                    makeSimple(klass)
-            }.writeTo(codeGenerator, Dependencies(true))
+            val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
+            makeFile(klass, annotation, cachedExceptions).writeTo(codeGenerator, Dependencies(true))
         }
 
         return emptyList()
     }
 
-    fun makeCached(klass: KSClassDeclaration): FileSpec {
-        val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
-            ?: run {
-                logger.error("No args constructor not found")
-                throw Exception("No args constructor not found")
-            }
 
-        val packageName = klass.packageName.asString()
-
-        val className = klass.toClassName()
+    @OptIn(KspExperimental::class)
+    private fun makeFile(
+        klass: KSClassDeclaration,
+        annotation: ExcifyException,
+        cachedExceptions: Set<KSPropertyDeclaration>
+    ): FileSpec {
+        val (fileBuilder, className) = makeFileBuilderFor(klass)
         val companionObject = klass.findCompanionObject()!!.toClassName()
 
-        return FileSpec.builder(packageName, "excify_${className.simpleName}")
-            .addProperty(
-                PropertySpec.builder(
-                    name = "cachedException",
-                    type = Throwable::class,
-                    modifiers = listOf(KModifier.PRIVATE)
+        if (annotation.cacheNoArgs) {
+            val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
+                ?: run {
+                    logger.error("No args constructor not found")
+                    throw Exception("No args constructor not found")
+                }
+
+            fileBuilder
+                .addProperty(
+                    PropertySpec.builder("cachedException", Throwable::class, listOf(KModifier.PRIVATE))
+                        .mutable(false)
+                        .initializer("%T() as Throwable", className)
+                        .build()
                 )
-                    .mutable(false)
-                    .initializer("%T() as Throwable", className)
-                    .build()
-            )
-            .addFunction(
-                FunSpec.builder("make")
-                    .receiver(companionObject).also { funcBuilder ->
-                        noArgsConstructor.parameters.forEach { param ->
+                .addFunction(
+                    FunSpec.builder("make")
+                        .receiver(companionObject).also { funcBuilder ->
+                            noArgsConstructor.parameters.forEach { param ->
+                                funcBuilder.addParameter(
+                                    ParameterSpec.builder(
+                                        name = param.name!!.getShortName(),
+                                        type = param.type.toTypeName(),
+                                        modifiers = param.asModifiers()
+                                    ).build()
+                                )
+                            }
+                        }
+                        .returns(Throwable::class).let { builder ->
+                            val returnStatement = "return cachedException"
+                            builder.addStatement(returnStatement)
+                        }.build()
+                )
+        }
+
+
+        fileBuilder
+            .apply {
+                val targetConstructors = klass.getConstructors()
+                    .let { constructors ->
+                        if (annotation.cacheNoArgs)
+                            constructors.filter { it.parameters.isNotEmpty() }
+                        else
+                            constructors
+                    }
+
+
+                targetConstructors.forEach { constructor ->
+                    addFunction(FunSpec.builder("make").receiver(companionObject).also { funcBuilder ->
+
+                        constructor.parameters.forEach { param ->
                             funcBuilder.addParameter(
                                 ParameterSpec.builder(
                                     name = param.name!!.getShortName(),
@@ -78,53 +123,43 @@ class ExcifyProcessor(
                                 ).build()
                             )
                         }
-                    }
-                    .returns(Throwable::class).let { builder ->
-                        val returnStatement = "return cachedException"
-                        builder.addStatement(returnStatement)
-                    }.build()
-            )
-            .build()
-    }
 
-    fun makeSimple(klass: KSClassDeclaration): FileSpec {
-        val packageName = klass.packageName.asString()
+                    }.returns(Throwable::class).let { funcBuilder ->
+                        val returnStatement = buildString {
+                            append("return %T(")
 
-        val companionObject = klass.findCompanionObject()!!.toClassName()
+                            constructor.parameters.forEach { param ->
+                                append(param.name!!.getShortName())
+                                append(", ") // kotlin don`t care
+                            }
 
-        return FileSpec.builder(packageName, "excify_${klass.toClassName().simpleName}").apply {
-
-
-            klass.getConstructors().forEach { constructor ->
-                addFunction(FunSpec.builder("make").receiver(companionObject).let { funcBuilder ->
-
-                    constructor.parameters.forEach { param ->
-                        funcBuilder.addParameter(
-                            ParameterSpec.builder(
-                                name = param.name!!.getShortName(),
-                                type = param.type.toTypeName(),
-                                modifiers = param.asModifiers()
-                            ).build()
-                        )
-                    }
-
-                    funcBuilder
-                }.returns(Throwable::class).let { builder ->
-                    val returnStatement = buildString {
-                        append("return %T(")
-
-                        constructor.parameters.forEach { param ->
-                            append(param.name!!.getShortName())
-                            append(", ") // kotlin don`t care
+                            append(") as Throwable")
                         }
 
-                        append(") as Throwable")
-                    }
-
-                    builder.addStatement(returnStatement, klass.toClassName())
-                }.build())
+                        funcBuilder.addStatement(returnStatement, className)
+                    }.build())
+                }
             }
-        }.build()
+
+
+        cachedExceptions
+            .filter { it.type.toString() == klass.simpleName.getShortName() }
+            .forEach { cachedException ->
+                fileBuilder
+                    .addFunction(
+                        FunSpec.builder(
+                            cachedException.getAnnotationsByType(ExcifyCached::class).first().methodName
+                        )
+                            .receiver(companionObject)
+                            .returns(Throwable::class)
+                            .addStatement("return %L as Throwable", cachedException)
+                            .build()
+                    )
+                    .addImport(cachedException.packageName.asString(), cachedException.qualifiedName!!.asString())
+            }
+
+
+        return fileBuilder.build()
     }
 }
 
