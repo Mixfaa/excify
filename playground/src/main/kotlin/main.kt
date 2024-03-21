@@ -1,4 +1,5 @@
-@ExcifyException
+
+@ExcifyException(canBeCached = true)
 class SomeException : NoStacktraceThrowable("msg") {
     companion object
 }
@@ -13,6 +14,11 @@ class NotFoundException(subject: String) : NoStacktraceThrowable("$subject not f
 }
 
 fun main() {
-    SomeException.make()
-    SomeException2.make("hello world")
+    val ex0 = SomeException.make()
+    val ex1 = SomeException2.make("hello")
+    val ex2 = SomeException2.make("hello")
+
+    println(ex1 == ex2)
+
+    println("hello world")
 }

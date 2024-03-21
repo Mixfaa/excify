@@ -3,10 +3,7 @@ import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
-import com.squareup.kotlinpoet.FileSpec
-import com.squareup.kotlinpoet.FunSpec
-import com.squareup.kotlinpoet.KModifier
-import com.squareup.kotlinpoet.ParameterSpec
+import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
@@ -46,9 +43,20 @@ class ExcifyProcessor(
     fun makeCached(klass: KSClassDeclaration): FileSpec {
         val packageName = klass.packageName.asString()
 
+        val className = klass.toClassName()
         val companionObject = klass.findCompanionObject()!!.toClassName()
 
-        return FileSpec.builder(packageName, "excify_${klass.toClassName().simpleName}").apply {
+        return FileSpec.builder(packageName, "excify_${className.simpleName}").apply {
+            addProperty(
+                PropertySpec.builder(
+                    name = "cachedException",
+                    type = Throwable::class,
+                    modifiers = listOf(KModifier.PRIVATE)
+                )
+                    .mutable(false)
+                    .initializer("%T() as Throwable", className)
+                    .build()
+            )
             klass.getConstructors().forEach { constructor ->
                 addFunction(FunSpec.builder("make").receiver(companionObject).let { funcBuilder ->
 
@@ -64,18 +72,8 @@ class ExcifyProcessor(
 
                     funcBuilder
                 }.returns(Throwable::class).let { builder ->
-                    val returnStatement = buildString {
-                        append("return %T(")
-
-                        constructor.parameters.forEach { param ->
-                            append(param.name!!.getShortName())
-                            append(',') // kotlin don`t care
-                        }
-
-                        append(") as Throwable")
-                    }
-
-                    builder.addStatement(returnStatement, klass.toClassName())
+                    val returnStatement = "return cachedException"
+                    builder.addStatement(returnStatement)
                 }.build())
             }
         }.build()
@@ -87,6 +85,8 @@ class ExcifyProcessor(
         val companionObject = klass.findCompanionObject()!!.toClassName()
 
         return FileSpec.builder(packageName, "excify_${klass.toClassName().simpleName}").apply {
+
+
             klass.getConstructors().forEach { constructor ->
                 addFunction(FunSpec.builder("make").receiver(companionObject).let { funcBuilder ->
 
