@@ -7,8 +7,13 @@ annotation class ExcifyException(
 )
 
 @Retention(AnnotationRetention.SOURCE)
+@Target(AnnotationTarget.PROPERTY)
 annotation class ExcifyCached(
-    val methodName:String
+    val methodName: String = ""
 )
 
+
+interface JsonSerializer {
+    fun serialize(obj: Any): String
+}
 

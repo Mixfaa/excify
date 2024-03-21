@@ -142,13 +142,28 @@ class ExcifyProcessor(
             }
 
 
+        fun makeMethodName(cachedException: KSPropertyDeclaration): String {
+            var methodName = cachedException.getAnnotationsByType(ExcifyCached::class).first().methodName
+
+            if (methodName.isNotBlank()) return methodName
+            methodName = cachedException.simpleName.getShortName()
+
+            if (methodName.lowercase().endsWith("exception"))
+                methodName = methodName.substring(0, methodName.length - "exception".length)
+
+            return methodName
+        }
+
+
         cachedExceptions
             .filter { it.type.toString() == klass.simpleName.getShortName() }
             .forEach { cachedException ->
+                val methodName = makeMethodName(cachedException)
+
                 fileBuilder
                     .addFunction(
                         FunSpec.builder(
-                            cachedException.getAnnotationsByType(ExcifyCached::class).first().methodName
+                            methodName
                         )
                             .receiver(companionObject)
                             .returns(Throwable::class)
