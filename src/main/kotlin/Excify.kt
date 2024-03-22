@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializerProvider
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.ser.std.StdSerializer
+import kotlin.reflect.KClass
 
 /**
  * fast throwable class (no stack trace)
@@ -30,6 +31,13 @@ annotation class ExcifyException(
 @Target(AnnotationTarget.PROPERTY)
 annotation class ExcifyCachedException(
     val methodName: String = ""
+)
+
+@Retention(AnnotationRetention.SOURCE)
+@Target(AnnotationTarget.PROPERTY)
+annotation class ExcifyOptionalOrThrow(
+    val type: KClass<*>,
+    val methodName:String = ""
 )
 
 /**

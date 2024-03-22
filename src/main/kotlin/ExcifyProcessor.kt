@@ -1,15 +1,15 @@
+import com.google.devtools.ksp.KSTypeNotPresentException
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.KSAnnotated
-import com.google.devtools.ksp.symbol.KSClassDeclaration
-import com.google.devtools.ksp.symbol.KSPropertyDeclaration
-import com.google.devtools.ksp.symbol.KSValueParameter
+import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
+import java.util.*
 
 private fun KSClassDeclaration.findCompanionObject(): KSClassDeclaration? =
     declarations.filterIsInstance<KSClassDeclaration>().firstOrNull { it.isCompanionObject }
@@ -22,11 +22,33 @@ private fun KSValueParameter.asModifiers(): Iterable<KModifier> {
 }
 
 @OptIn(KspExperimental::class)
-private fun resolveMethodName(cachedException: KSPropertyDeclaration): String {
+private fun ExcifyOptionalOrThrow.findType(): KSType = try {
+    this.type
+    throw Exception("type present")
+} catch (ex: KSTypeNotPresentException) {
+    ex.ksType
+}
+
+
+@OptIn(KspExperimental::class)
+private fun resolveGetMethodName(cachedException: KSPropertyDeclaration): String {
     var methodName = cachedException.getAnnotationsByType(ExcifyCachedException::class).first().methodName
 
     if (methodName.isNotBlank()) return methodName
     methodName = cachedException.simpleName.getShortName()
+
+    if (methodName.lowercase().endsWith("exception"))
+        methodName = methodName.substring(0, methodName.length - "exception".length)
+
+    return methodName
+}
+
+private fun resolveOrThrowMethodName(orThrow: KSPropertyDeclaration, annotation: ExcifyOptionalOrThrow): String {
+    var methodName = annotation.methodName
+
+    if (methodName.isNotBlank()) return methodName
+    val exceptionName = orThrow.simpleName.getShortName().replaceFirstChar { it.uppercase() }
+    methodName = "orThrow${exceptionName}"
 
     if (methodName.lowercase().endsWith("exception"))
         methodName = methodName.substring(0, methodName.length - "exception".length)
@@ -55,22 +77,30 @@ class ExcifyProcessor(
         val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCachedException::class.qualifiedName!!, true)
             .filterIsInstance<KSPropertyDeclaration>().toSet()
 
+        val orThrows = resolver.getSymbolsWithAnnotation(ExcifyOptionalOrThrow::class.qualifiedName!!, true)
+            .filterIsInstance<KSPropertyDeclaration>().toSet()
+
         for (klass in annotatedClasses) {
             val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
-            makeFile(klass, annotation, cachedExceptions).writeTo(codeGenerator, Dependencies(true))
+            makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies(true))
         }
 
         return emptyList()
     }
 
+    @OptIn(KspExperimental::class)
     private fun makeFile(
         klass: KSClassDeclaration,
         annotation: ExcifyException,
-        cachedExceptions: Set<KSPropertyDeclaration>
+        cachedExceptions: Set<KSPropertyDeclaration>,
+        orThrows: Set<KSPropertyDeclaration>
     ): FileSpec {
         val (fileBuilder, className) = makeFileSpecBuilderFor(klass)
         val companionObject = klass.findCompanionObject()!!.toClassName()
 
+        /**
+         * Building get/make method returning pre constructed object
+         */
         if (annotation.cacheNoArgs) {
             val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
                 ?: run {
@@ -105,6 +135,9 @@ class ExcifyProcessor(
                 )
         }
 
+        /**
+         * making make methods with for all constructors
+         */
         fileBuilder
             .apply {
                 val targetConstructors = klass.getConstructors()
@@ -145,11 +178,21 @@ class ExcifyProcessor(
                 }
             }
 
+        /**
+         * making extension methods for cached objects (ExcifyCachedException)
+         */
+
         cachedExceptions
             .filter { it.type.toString() == klass.simpleName.getShortName() }
             .forEach { cachedException ->
-                val methodName = resolveMethodName(cachedException)
+                val methodName = resolveGetMethodName(cachedException)
 
+                fileBuilder.addImport(
+                    cachedException.packageName.asString(),
+                    cachedException.qualifiedName!!.asString()
+                )
+
+                // making extension method
                 fileBuilder
                     .addFunction(
                         FunSpec.builder(
@@ -160,7 +203,35 @@ class ExcifyProcessor(
                             .addStatement("return %L", cachedException)
                             .build()
                     )
-                    .addImport(cachedException.packageName.asString(), cachedException.qualifiedName!!.asString())
+
+            }
+
+        // generating orThrow methods
+        orThrows
+            .filter { it.type.toString() == klass.simpleName.getShortName() }
+            .forEach { orThrow ->
+                val annotation = orThrow.getAnnotationsByType(ExcifyOptionalOrThrow::class).first()
+
+                fileBuilder.addImport(
+                    orThrow.packageName.asString(),
+                    orThrow.qualifiedName!!.asString()
+                )
+
+                val type = annotation.findType()
+                val typeClassName = type.toClassName()
+                fileBuilder
+                    .addFunction(
+                        FunSpec.builder(resolveOrThrowMethodName(orThrow, annotation))
+                            .returns(typeClassName)
+                            .receiver(
+                                Optional::class.asClassName().parameterizedBy(
+                                    typeClassName
+                                )
+                            )
+                            .addStatement("return this.orElseThrow { %L as Throwable }", orThrow) // why not
+                            .build()
+                    )
+
             }
 
         return fileBuilder.build()
