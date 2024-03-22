@@ -11,6 +11,8 @@ repositories {
 
 dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    implementation("io.arrow-kt:arrow-core:1.2.1")
+    implementation("io.arrow-kt:arrow-fx-coroutines:1.2.1")
 }
 
 tasks.test {

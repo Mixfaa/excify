@@ -36,7 +36,7 @@ class ExcifyProcessor(
         val annotatedClasses = resolver.getSymbolsWithAnnotation(ExcifyException::class.qualifiedName!!)
             .filterIsInstance<KSClassDeclaration>().toSet()
 
-        val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCached::class.qualifiedName!!, true)
+        val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCachedException::class.qualifiedName!!, true)
             .filterIsInstance<KSPropertyDeclaration>().toSet()
 
         for (klass in annotatedClasses) {
@@ -66,9 +66,9 @@ class ExcifyProcessor(
 
             fileBuilder
                 .addProperty(
-                    PropertySpec.builder("cachedException", Throwable::class, listOf(KModifier.PRIVATE))
+                    PropertySpec.builder("cachedException", className, listOf(KModifier.PRIVATE))
                         .mutable(false)
-                        .initializer("%T() as Throwable", className)
+                        .initializer("%T()", className)
                         .build()
                 )
                 .addFunction(
@@ -84,7 +84,7 @@ class ExcifyProcessor(
                                 )
                             }
                         }
-                        .returns(Throwable::class).let { builder ->
+                        .returns(className).let { builder ->
                             val returnStatement = "return cachedException"
                             builder.addStatement(returnStatement)
                         }.build()
@@ -116,7 +116,7 @@ class ExcifyProcessor(
                             )
                         }
 
-                    }.returns(Throwable::class).let { funcBuilder ->
+                    }.returns(className).let { funcBuilder ->
                         val returnStatement = buildString {
                             append("return %T(")
 
@@ -125,7 +125,7 @@ class ExcifyProcessor(
                                 append(", ") // kotlin don`t care
                             }
 
-                            append(") as Throwable")
+                            append(")")
                         }
 
                         funcBuilder.addStatement(returnStatement, className)
@@ -135,7 +135,7 @@ class ExcifyProcessor(
 
 
         fun makeMethodName(cachedException: KSPropertyDeclaration): String {
-            var methodName = cachedException.getAnnotationsByType(ExcifyCached::class).first().methodName
+            var methodName = cachedException.getAnnotationsByType(ExcifyCachedException::class).first().methodName
 
             if (methodName.isNotBlank()) return methodName
             methodName = cachedException.simpleName.getShortName()
@@ -158,8 +158,8 @@ class ExcifyProcessor(
                             methodName
                         )
                             .receiver(companionObject)
-                            .returns(Throwable::class)
-                            .addStatement("return %L as Throwable", cachedException)
+                            .returns(className)
+                            .addStatement("return %L", cachedException)
                             .build()
                     )
                     .addImport(cachedException.packageName.asString(), cachedException.qualifiedName!!.asString())
