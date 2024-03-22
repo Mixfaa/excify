@@ -2,33 +2,49 @@ import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSValueParameter
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
 
-fun KSClassDeclaration.findCompanionObject(): KSClassDeclaration? =
+private fun KSClassDeclaration.findCompanionObject(): KSClassDeclaration? =
     declarations.filterIsInstance<KSClassDeclaration>().firstOrNull { it.isCompanionObject }
 
-fun KSValueParameter.asModifiers(): Iterable<KModifier> {
+private fun KSValueParameter.asModifiers(): Iterable<KModifier> {
     return buildList {
         if (this@asModifiers.isVararg) add(KModifier.VARARG)
         if (this@asModifiers.isCrossInline) add(KModifier.CROSSINLINE)
     }
 }
 
+@OptIn(KspExperimental::class)
+private fun resolveMethodName(cachedException: KSPropertyDeclaration): String {
+    var methodName = cachedException.getAnnotationsByType(ExcifyCachedException::class).first().methodName
+
+    if (methodName.isNotBlank()) return methodName
+    methodName = cachedException.simpleName.getShortName()
+
+    if (methodName.lowercase().endsWith("exception"))
+        methodName = methodName.substring(0, methodName.length - "exception".length)
+
+    return methodName
+}
+
+private fun makeFileSpecBuilderFor(klass: KSClassDeclaration): Pair<FileSpec.Builder, ClassName> {
+    val packageName = klass.packageName.asString()
+    val className = klass.toClassName()
+
+    return FileSpec.builder(packageName, "excify_${className.simpleName}") to className
+}
+
 class ExcifyProcessor(
     private val codeGenerator: CodeGenerator,
     private val logger: KSPLogger
 ) : SymbolProcessor {
-
-    private fun makeFileBuilderFor(klass: KSClassDeclaration): Pair<FileSpec.Builder, ClassName> {
-        val packageName = klass.packageName.asString()
-        val className = klass.toClassName()
-
-        return FileSpec.builder(packageName, "excify_${className.simpleName}") to className
-    }
 
     @OptIn(KspExperimental::class)
     override fun process(resolver: Resolver): List<KSAnnotated> {
@@ -47,14 +63,12 @@ class ExcifyProcessor(
         return emptyList()
     }
 
-
-    @OptIn(KspExperimental::class)
     private fun makeFile(
         klass: KSClassDeclaration,
         annotation: ExcifyException,
         cachedExceptions: Set<KSPropertyDeclaration>
     ): FileSpec {
-        val (fileBuilder, className) = makeFileBuilderFor(klass)
+        val (fileBuilder, className) = makeFileSpecBuilderFor(klass)
         val companionObject = klass.findCompanionObject()!!.toClassName()
 
         if (annotation.cacheNoArgs) {
@@ -72,7 +86,7 @@ class ExcifyProcessor(
                         .build()
                 )
                 .addFunction(
-                    FunSpec.builder("make")
+                    FunSpec.builder(annotation.cachedGetName)
                         .receiver(companionObject).also { funcBuilder ->
                             noArgsConstructor.parameters.forEach { param ->
                                 funcBuilder.addParameter(
@@ -91,7 +105,6 @@ class ExcifyProcessor(
                 )
         }
 
-
         fileBuilder
             .apply {
                 val targetConstructors = klass.getConstructors()
@@ -101,7 +114,6 @@ class ExcifyProcessor(
                         else
                             constructors
                     }
-
 
                 targetConstructors.forEach { constructor ->
                     addFunction(FunSpec.builder("make").receiver(companionObject).also { funcBuilder ->
@@ -133,24 +145,10 @@ class ExcifyProcessor(
                 }
             }
 
-
-        fun makeMethodName(cachedException: KSPropertyDeclaration): String {
-            var methodName = cachedException.getAnnotationsByType(ExcifyCachedException::class).first().methodName
-
-            if (methodName.isNotBlank()) return methodName
-            methodName = cachedException.simpleName.getShortName()
-
-            if (methodName.lowercase().endsWith("exception"))
-                methodName = methodName.substring(0, methodName.length - "exception".length)
-
-            return methodName
-        }
-
-
         cachedExceptions
             .filter { it.type.toString() == klass.simpleName.getShortName() }
             .forEach { cachedException ->
-                val methodName = makeMethodName(cachedException)
+                val methodName = resolveMethodName(cachedException)
 
                 fileBuilder
                     .addFunction(

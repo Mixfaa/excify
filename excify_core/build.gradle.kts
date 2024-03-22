@@ -11,7 +11,6 @@ repositories {
 }
 
 dependencies {
-
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))
 
@@ -21,7 +20,7 @@ dependencies {
     implementation("com.squareup:kotlinpoet-ksp:1.16.0")
 
     implementation("com.google.devtools.ksp:symbol-processing-api:1.9.23-1.0.19")
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 }
 
 tasks.test {

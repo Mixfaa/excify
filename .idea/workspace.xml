@@ -124,7 +124,7 @@
       <recent name="C:\Users\mishu\programming_projects\java_kotlin\excify\excify_core\src\main\kotlin" />
     </key>
   </component>
-  <component name="RunManager" selected="Gradle.excify:playground [build]">
+  <component name="RunManager" selected="Kotlin.MainKt">
     <configuration name="Tests in 'excify.playground'" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
@@ -207,9 +207,9 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Gradle.excify:playground [build]" />
-        <item itemvalue="Gradle.excify:excify_core [build]" />
         <item itemvalue="Kotlin.MainKt" />
+        <item itemvalue="Gradle.excify:excify_core [build]" />
+        <item itemvalue="Gradle.excify:playground [build]" />
         <item itemvalue="Gradle.Tests in 'excify.playground'" />
         <item itemvalue="Kotlin.Main_tKt" />
       </list>

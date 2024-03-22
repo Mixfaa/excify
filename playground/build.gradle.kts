@@ -15,8 +15,10 @@ dependencies {
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))
 
+
     implementation("io.arrow-kt:arrow-core:1.2.1")
     implementation("io.arrow-kt:arrow-fx-coroutines:1.2.1")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 
     implementation(project(":excify_core"))
     ksp(project(":excify_core"))

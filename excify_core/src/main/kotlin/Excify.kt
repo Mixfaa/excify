@@ -1,17 +1,29 @@
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import com.fasterxml.jackson.core.JsonGenerator
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializerProvider
+import com.fasterxml.jackson.databind.module.SimpleModule
+import com.fasterxml.jackson.databind.ser.std.StdSerializer
 
-open class LightweightThrowable(msg: String) : java.lang.Throwable(msg, null, true, false) {
-    inline fun asThrowable() = this as Throwable
+/**
+ * fast throwable class (no stack trace)
+ */
+open class FastThrowable(msg: String) : java.lang.Throwable(msg, null, true, false) {
+    fun asThrowable() = this as Throwable
 }
 
-class UnknownLWThrowable(val value: Any) : LightweightThrowable(value.toString())
+class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
 
+/**
+ * Annotations
+ */
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class ExcifyException(
-    val cacheNoArgs: Boolean = false
+    val cacheNoArgs: Boolean = false,
+    val cachedGetName: String = "make"
 )
 
 @Retention(AnnotationRetention.SOURCE)
@@ -20,23 +32,48 @@ annotation class ExcifyCachedException(
     val methodName: String = ""
 )
 
-typealias EitherError<T> = Either<LightweightThrowable, T>
+/**
+ * Arrow`s Either
+ */
+typealias EitherError<T> = Either<FastThrowable, T>
 
-fun <T> EitherError<T>.orThrow() : T = when (this) {
+fun <T> EitherError<T>.orThrow(): T = when (this) {
     is Either.Left -> throw this.value.asThrowable()
     is Either.Right -> this.value
 }
 
+/**
+ * excify scopes
+ */
 object Excify {
     inline fun <reified TargetType> rethrow(block: () -> Any): TargetType = when (val returnedValue = block()) {
         is TargetType -> returnedValue
-        is LightweightThrowable -> throw returnedValue.asThrowable()
-        else -> throw UnknownLWThrowable(returnedValue).asThrowable()
+        is FastThrowable -> throw returnedValue.asThrowable()
+        else -> throw UnknownFastThrowable(returnedValue).asThrowable()
     }
 
-    inline fun <reified TargetType> wrap(block: () -> Any): EitherError<TargetType> = when (val returnedValue = block()) {
-        is TargetType -> returnedValue.right()
-        is LightweightThrowable -> returnedValue.left()
-        else -> UnknownLWThrowable(returnedValue).left()
+    inline fun <reified TargetType> wrap(block: () -> Any): EitherError<TargetType> =
+        when (val returnedValue = block()) {
+            is TargetType -> returnedValue.right()
+            is FastThrowable -> returnedValue.left()
+            else -> UnknownFastThrowable(returnedValue).left()
+        }
+}
+
+/**
+ * Fasterxml
+ */
+class FastThrowableSerializer : StdSerializer<FastThrowable>(FastThrowable::class.java) {
+    override fun serialize(value: FastThrowable, gen: JsonGenerator, provider: SerializerProvider) {
+        gen.writeStartObject()
+
+        val localizedMessage = value.localizedMessage
+        if (localizedMessage != null)
+            gen.writeStringField("message", localizedMessage)
+
+        gen.writeEndObject()
     }
 }
+
+fun ObjectMapper.registerExcifyModule() =
+    this.registerModule(SimpleModule().addSerializer(FastThrowableSerializer()))
