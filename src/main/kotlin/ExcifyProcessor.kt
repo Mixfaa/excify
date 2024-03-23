@@ -80,7 +80,18 @@ class ExcifyProcessor(
         val orThrows = resolver.getSymbolsWithAnnotation(ExcifyOptionalOrThrow::class.qualifiedName!!, true)
             .filterIsInstance<KSPropertyDeclaration>().toSet()
 
+        val fastThrowableTypeName = FastThrowable::class.asTypeName()
+
         for (klass in annotatedClasses) {
+
+            if (klass.superTypes.firstOrNull { superType ->
+                    superType.toTypeName() == fastThrowableTypeName
+                } == null) {
+                logger.error("Exception $klass not inherited from ${FastThrowable::class}")
+                throw Exception("Exception $klass not inherited from ${FastThrowable::class}")
+            }
+
+
             val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
             makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies(true))
         }
