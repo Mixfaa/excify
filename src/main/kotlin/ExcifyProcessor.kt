@@ -104,38 +104,40 @@ class ExcifyProcessor(
         /**
          * Building get/make method returning pre constructed object
          */
+        var noArgsConstructorCached = false
         if (annotation.cacheNoArgs) {
             val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
-                ?: run {
-                    logger.error("No args constructor not found")
-                    throw Exception("No args constructor not found")
-                }
 
-            fileBuilder
-                .addProperty(
-                    PropertySpec.builder("cachedException", className, listOf(KModifier.PRIVATE))
-                        .mutable(false)
-                        .initializer("%T()", className)
-                        .build()
-                )
-                .addFunction(
-                    FunSpec.builder(annotation.cachedGetName.ifBlank { "get" })
-                        .receiver(companionObject).also { funcBuilder ->
-                            noArgsConstructor.parameters.forEach { param ->
-                                funcBuilder.addParameter(
-                                    ParameterSpec.builder(
-                                        name = param.name!!.getShortName(),
-                                        type = param.type.toTypeName(),
-                                        modifiers = param.asModifiers()
-                                    ).build()
-                                )
+            if (noArgsConstructor == null) {
+                logger.info("No args constructor not found for $klass but caching requested")
+            } else {
+                fileBuilder
+                    .addProperty(
+                        PropertySpec.builder("cachedException", className, listOf(KModifier.PRIVATE))
+                            .mutable(false)
+                            .initializer("%T()", className)
+                            .build()
+                    )
+                    .addFunction(
+                        FunSpec.builder(annotation.cachedGetName.ifBlank { "get" })
+                            .receiver(companionObject).also { funcBuilder ->
+                                noArgsConstructor.parameters.forEach { param ->
+                                    funcBuilder.addParameter(
+                                        ParameterSpec.builder(
+                                            name = param.name!!.getShortName(),
+                                            type = param.type.toTypeName(),
+                                            modifiers = param.asModifiers()
+                                        ).build()
+                                    )
+                                }
                             }
-                        }
-                        .returns(className).let { builder ->
-                            val returnStatement = "return cachedException"
-                            builder.addStatement(returnStatement)
-                        }.build()
-                )
+                            .returns(className).let { builder ->
+                                val returnStatement = "return cachedException"
+                                builder.addStatement(returnStatement)
+                            }.build()
+                    )
+                noArgsConstructorCached = true
+            }
         }
 
         /**
@@ -145,7 +147,7 @@ class ExcifyProcessor(
             .apply {
                 val targetConstructors = klass.getConstructors()
                     .let { constructors ->
-                        if (annotation.cacheNoArgs)
+                        if (noArgsConstructorCached)
                             constructors.filter { it.parameters.isNotEmpty() }
                         else
                             constructors

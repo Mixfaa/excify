@@ -21,7 +21,7 @@ class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.CLASS)
 annotation class ExcifyException(
-    val cacheNoArgs: Boolean = false,
+    val cacheNoArgs: Boolean = true,
     val cachedGetName: String = "get"
 )
 
