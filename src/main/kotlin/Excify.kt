@@ -22,7 +22,7 @@ class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
 @Target(AnnotationTarget.CLASS)
 annotation class ExcifyException(
     val cacheNoArgs: Boolean = false,
-    val cachedGetName: String = "make"
+    val cachedGetName: String = "get"
 )
 
 @Retention(AnnotationRetention.SOURCE)

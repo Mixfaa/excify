@@ -72,25 +72,15 @@ class ExcifyProcessor(
     override fun process(resolver: Resolver): List<KSAnnotated> {
 
         val annotatedClasses = resolver.getSymbolsWithAnnotation(ExcifyException::class.qualifiedName!!)
-            .filterIsInstance<KSClassDeclaration>().toSet()
+            .filterIsInstance<KSClassDeclaration>().toList()
 
         val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCachedException::class.qualifiedName!!, true)
-            .filterIsInstance<KSPropertyDeclaration>().toSet()
+            .filterIsInstance<KSPropertyDeclaration>().toList()
 
         val orThrows = resolver.getSymbolsWithAnnotation(ExcifyOptionalOrThrow::class.qualifiedName!!, true)
-            .filterIsInstance<KSPropertyDeclaration>().toSet()
-
-        val fastThrowableTypeName = FastThrowable::class.asTypeName()
+            .filterIsInstance<KSPropertyDeclaration>().toList()
 
         for (klass in annotatedClasses) {
-
-//            if (klass.superTypes.firstOrNull { superType ->
-//                    superType.toTypeName() == fastThrowableTypeName
-//                } == null) {
-//                logger.error("Exception $klass not inherited from ${FastThrowable::class}")
-//                throw Exception("Exception $klass not inherited from ${FastThrowable::class}")
-//            }
-
             val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
             makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies(true))
         }
@@ -102,8 +92,8 @@ class ExcifyProcessor(
     private fun makeFile(
         klass: KSClassDeclaration,
         annotation: ExcifyException,
-        cachedExceptions: Set<KSPropertyDeclaration>,
-        orThrows: Set<KSPropertyDeclaration>
+        cachedExceptions: List<KSPropertyDeclaration>,
+        orThrows: List<KSPropertyDeclaration>
     ): FileSpec {
         val (fileBuilder, className) = makeFileSpecBuilderFor(klass)
         val companionObject = klass.findCompanionObject()!!.toClassName()
