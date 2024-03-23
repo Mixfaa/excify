@@ -10,6 +10,7 @@ import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
 import java.util.*
+import kotlin.reflect.KClass
 
 private fun KSClassDeclaration.findCompanionObject(): KSClassDeclaration? =
     declarations.filterIsInstance<KSClassDeclaration>().firstOrNull { it.isCompanionObject }
@@ -21,10 +22,12 @@ private fun KSValueParameter.asModifiers(): Iterable<KModifier> {
     }
 }
 
+/**
+ * returns KSType or KClass
+ */
 @OptIn(KspExperimental::class)
-private fun ExcifyOptionalOrThrow.findType(): KSType = try {
+private fun ExcifyOptionalOrThrow.findType(): Any = try {
     this.type
-    throw Exception("type present")
 } catch (ex: KSTypeNotPresentException) {
     ex.ksType
 }
@@ -217,8 +220,12 @@ class ExcifyProcessor(
                     orThrow.simpleName.asString()
                 )
 
-                val type = orThrowAnnotation.findType()
-                val typeClassName = type.toClassName()
+                val typeClassName = when (val type = orThrowAnnotation.findType()) {
+                    is KSType -> type.toClassName()
+                    is KClass<*> -> type.asClassName()
+                    else -> throw Exception("Can`t resolve type")
+                }
+
                 fileBuilder
                     .addFunction(
                         FunSpec.builder(resolveOrThrowMethodName(orThrow, orThrowAnnotation))
@@ -231,7 +238,7 @@ class ExcifyProcessor(
                             .addCode(
                                 CodeBlock
                                     .builder()
-                                    .beginControlFlow("return run") // because of bad kotlinpoet formatting
+                                    .beginControlFlow("return run") // because of bad kotlinpoet wired formatting
                                     .beginControlFlow("orElseThrow")
                                     .addStatement("%L", orThrow)
                                     .endControlFlow()
