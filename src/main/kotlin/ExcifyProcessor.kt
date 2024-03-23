@@ -84,13 +84,12 @@ class ExcifyProcessor(
 
         for (klass in annotatedClasses) {
 
-            if (klass.superTypes.firstOrNull { superType ->
-                    superType.toTypeName() == fastThrowableTypeName
-                } == null) {
-                logger.error("Exception $klass not inherited from ${FastThrowable::class}")
-                throw Exception("Exception $klass not inherited from ${FastThrowable::class}")
-            }
-
+//            if (klass.superTypes.firstOrNull { superType ->
+//                    superType.toTypeName() == fastThrowableTypeName
+//                } == null) {
+//                logger.error("Exception $klass not inherited from ${FastThrowable::class}")
+//                throw Exception("Exception $klass not inherited from ${FastThrowable::class}")
+//            }
 
             val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
             makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies(true))
@@ -127,7 +126,7 @@ class ExcifyProcessor(
                         .build()
                 )
                 .addFunction(
-                    FunSpec.builder(annotation.cachedGetName)
+                    FunSpec.builder(annotation.cachedGetName.ifBlank { "get" })
                         .receiver(companionObject).also { funcBuilder ->
                             noArgsConstructor.parameters.forEach { param ->
                                 funcBuilder.addParameter(
@@ -200,7 +199,7 @@ class ExcifyProcessor(
 
                 fileBuilder.addImport(
                     cachedException.packageName.asString(),
-                    cachedException.qualifiedName!!.asString()
+                    cachedException.simpleName.asString()
                 )
 
                 // making extension method
@@ -221,30 +220,39 @@ class ExcifyProcessor(
         orThrows
             .filter { it.type.toString() == klass.simpleName.getShortName() }
             .forEach { orThrow ->
-                val annotation = orThrow.getAnnotationsByType(ExcifyOptionalOrThrow::class).first()
+                val orThrowAnnotation = orThrow.getAnnotationsByType(ExcifyOptionalOrThrow::class).first()
 
                 fileBuilder.addImport(
                     orThrow.packageName.asString(),
-                    orThrow.qualifiedName!!.asString()
+                    orThrow.simpleName.asString()
                 )
 
-                val type = annotation.findType()
+                val type = orThrowAnnotation.findType()
                 val typeClassName = type.toClassName()
                 fileBuilder
                     .addFunction(
-                        FunSpec.builder(resolveOrThrowMethodName(orThrow, annotation))
-                            .returns(typeClassName)
+                        FunSpec.builder(resolveOrThrowMethodName(orThrow, orThrowAnnotation))
                             .receiver(
                                 Optional::class.asClassName().parameterizedBy(
                                     typeClassName
                                 )
                             )
-                            .addStatement("return this.orElseThrow { %L as Throwable }", orThrow) // why not
+                            .returns(typeClassName)
+                            .addCode(
+                                CodeBlock
+                                    .builder()
+                                    .beginControlFlow("return run") // because of bad kotlinpoet formatting
+                                    .beginControlFlow("orElseThrow")
+                                    .addStatement("%L", orThrow)
+                                    .endControlFlow()
+                                    .endControlFlow()
+                                    .build()
+
+                            )
                             .build()
                     )
 
             }
-
         return fileBuilder.build()
     }
 }

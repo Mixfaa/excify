@@ -11,9 +11,7 @@ import kotlin.reflect.KClass
 /**
  * fast throwable class (no stack trace)
  */
-open class FastThrowable(msg: String) : java.lang.Throwable(msg, null, true, false) {
-    fun asThrowable() = this as Throwable
-}
+open class FastThrowable(msg: String) : Throwable(msg, null, true, false)
 
 class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
 
@@ -46,7 +44,7 @@ annotation class ExcifyOptionalOrThrow(
 typealias EitherError<T> = Either<FastThrowable, T>
 
 fun <T> EitherError<T>.orThrow(): T = when (this) {
-    is Either.Left -> throw this.value.asThrowable()
+    is Either.Left -> throw this.value
     is Either.Right -> this.value
 }
 
@@ -56,8 +54,8 @@ fun <T> EitherError<T>.orThrow(): T = when (this) {
 object Excify {
     inline fun <reified TargetType> rethrow(block: () -> Any): TargetType = when (val returnedValue = block()) {
         is TargetType -> returnedValue
-        is FastThrowable -> throw returnedValue.asThrowable()
-        else -> throw UnknownFastThrowable(returnedValue).asThrowable()
+        is FastThrowable -> throw returnedValue
+        else -> throw UnknownFastThrowable(returnedValue)
     }
 
     inline fun <reified TargetType> wrap(block: () -> Any): EitherError<TargetType> =
