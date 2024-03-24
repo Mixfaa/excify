@@ -85,7 +85,7 @@ class ExcifyProcessor(
 
         for (klass in annotatedClasses) {
             val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
-            makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies(true))
+            makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies.ALL_FILES)
         }
 
         return emptyList()
