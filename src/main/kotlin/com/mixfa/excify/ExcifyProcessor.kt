@@ -1,3 +1,5 @@
+package com.mixfa.excify
+
 import com.google.devtools.ksp.KSTypeNotPresentException
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
@@ -99,7 +101,11 @@ class ExcifyProcessor(
         orThrows: List<KSPropertyDeclaration>
     ): FileSpec {
         val (fileBuilder, className) = makeFileSpecBuilderFor(klass)
-        val companionObject = klass.findCompanionObject()!!.toClassName()
+        val companionObject = klass.findCompanionObject()?.toClassName()
+            ?: run {
+                logger.error("$klass don`t have companion object")
+                throw Exception("$klass don`t have companion object")
+            }
 
         /**
          * Building get/make method returning pre constructed object
