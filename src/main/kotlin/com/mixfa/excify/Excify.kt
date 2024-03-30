@@ -19,18 +19,19 @@ class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
 /**
  * Annotations
  */
-@Retention(AnnotationRetention.SOURCE)
-@Target(AnnotationTarget.CLASS)
-annotation class ExcifyException(
-    val cacheNoArgs: Boolean = true,
-    val cachedGetName: String = "get"
-)
 
+
+/**
+ * generates .userNameNotFound for annotated properties
+ * generates .get for annotated classes
+ */
 @Retention(AnnotationRetention.SOURCE)
-@Target(AnnotationTarget.PROPERTY)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.CLASS)
 annotation class ExcifyCachedException(
     val methodName: String = ""
 )
+
+
 
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.PROPERTY)

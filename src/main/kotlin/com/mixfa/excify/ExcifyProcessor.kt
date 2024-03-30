@@ -1,11 +1,14 @@
 package com.mixfa.excify
 
-import com.google.devtools.ksp.KSTypeNotPresentException
 import com.google.devtools.ksp.KspExperimental
 import com.google.devtools.ksp.getAnnotationsByType
+import com.google.devtools.ksp.getClassDeclarationByName
 import com.google.devtools.ksp.getConstructors
 import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import com.squareup.kotlinpoet.ksp.toClassName
@@ -14,155 +17,236 @@ import com.squareup.kotlinpoet.ksp.writeTo
 import java.util.*
 import kotlin.reflect.KClass
 
-private fun KSClassDeclaration.findCompanionObject(): KSClassDeclaration? =
-    declarations.filterIsInstance<KSClassDeclaration>().firstOrNull { it.isCompanionObject }
 
-private fun KSValueParameter.asModifiers(): Iterable<KModifier> {
-    return buildList {
-        if (this@asModifiers.isVararg) add(KModifier.VARARG)
-        if (this@asModifiers.isCrossInline) add(KModifier.CROSSINLINE)
+private data class ProcessingTools(
+    val resolver: Resolver,
+    val filesList: MutableList<FileSpec.Builder>,
+) {
+    fun getFileSpecBuilderFor(prop: KSPropertyDeclaration): FileSpec.Builder {
+        val klass = resolver.getClassDeclarationByName(prop.type.resolve().toClassName().canonicalName)
+            ?: throw Exception("Can`t find class by name ${prop.qualifiedName}")
+
+        return getFileSpecBuilderFor(klass)
+    }
+
+    fun getFileSpecBuilderFor(klass: KSClassDeclaration): FileSpec.Builder {
+        val packageName = klass.packageName.asString()
+        val filename = klass.excifyFilename()
+
+        return filesList.find { it.packageName == packageName && it.name == filename } ?: run {
+            val builder = FileSpec.builder(packageName, filename)
+            filesList.add(builder)
+
+            builder
+        }
     }
 }
 
-/**
- * returns KSType or KClass
- */
-@OptIn(KspExperimental::class)
-private fun ExcifyOptionalOrThrow.findType(): Any = try {
-    this.type
-} catch (ex: KSTypeNotPresentException) {
-    ex.ksType
-}
-
-
-@OptIn(KspExperimental::class)
-private fun resolveGetMethodName(cachedException: KSPropertyDeclaration): String {
-    var methodName = cachedException.getAnnotationsByType(ExcifyCachedException::class).first().methodName
-
-    if (methodName.isNotBlank()) return methodName
-    methodName = cachedException.simpleName.getShortName()
-
-    if (methodName.lowercase().endsWith("exception"))
-        methodName = methodName.substring(0, methodName.length - "exception".length)
-
-    return methodName
-}
-
-private fun resolveOrThrowMethodName(orThrow: KSPropertyDeclaration, annotation: ExcifyOptionalOrThrow): String {
-    var methodName = annotation.methodName
-
-    if (methodName.isNotBlank()) return methodName
-    val exceptionName = orThrow.simpleName.getShortName().replaceFirstChar { it.uppercase() }
-    methodName = "orThrow${exceptionName}"
-
-    if (methodName.lowercase().endsWith("exception"))
-        methodName = methodName.substring(0, methodName.length - "exception".length)
-
-    return methodName
-}
-
-private fun makeFileSpecBuilderFor(klass: KSClassDeclaration): Pair<FileSpec.Builder, ClassName> {
-    val packageName = klass.packageName.asString()
-    val className = klass.toClassName()
-
-    return FileSpec.builder(packageName, "excify_${className.simpleName}") to className
-}
-
 class ExcifyProcessor(
-    private val codeGenerator: CodeGenerator,
-    private val logger: KSPLogger
+    private val codeGenerator: CodeGenerator, private val logger: KSPLogger
 ) : SymbolProcessor {
 
     @OptIn(KspExperimental::class)
     override fun process(resolver: Resolver): List<KSAnnotated> {
+        val annotatedSymbols = resolver.getSymbolsWithAnnotation(ExcifyCachedException::class.qualifiedName!!, true)
 
-        val annotatedClasses = resolver.getSymbolsWithAnnotation(ExcifyException::class.qualifiedName!!)
-            .filterIsInstance<KSClassDeclaration>().toList()
+        val tools = ProcessingTools(resolver, mutableListOf())
 
-        val cachedExceptions = resolver.getSymbolsWithAnnotation(ExcifyCachedException::class.qualifiedName!!, true)
-            .filterIsInstance<KSPropertyDeclaration>().toList()
+        for (symbol in annotatedSymbols) {
+            val annotation = symbol.getAnnotationsByType(ExcifyCachedException::class).first()
+            when (symbol) {
+                is KSClassDeclaration -> handleAnnotatedClass(symbol, annotation, tools)
+                is KSPropertyDeclaration -> handleAnnotatedProperty(symbol, annotation, tools)
+            }
+        }
 
-        val orThrows = resolver.getSymbolsWithAnnotation(ExcifyOptionalOrThrow::class.qualifiedName!!, true)
-            .filterIsInstance<KSPropertyDeclaration>().toList()
+        val orThrowProps = resolver.getSymbolsWithAnnotation(ExcifyOptionalOrThrow::class.qualifiedName!!, true)
+            .filterIsInstance<KSPropertyDeclaration>()
 
-        for (klass in annotatedClasses) {
-            val annotation = klass.getAnnotationsByType(ExcifyException::class).first()
-            makeFile(klass, annotation, cachedExceptions, orThrows).writeTo(codeGenerator, Dependencies.ALL_FILES)
+        for (prop in orThrowProps) {
+            val annotation = prop.getAnnotationsByType(ExcifyOptionalOrThrow::class).first()
+            handleAnnotatedOrThrow(prop, annotation, tools)
+        }
+
+        tools.filesList.forEach {
+            it.build().writeTo(
+                codeGenerator, Dependencies.ALL_FILES
+            )
         }
 
         return emptyList()
     }
 
-    @OptIn(KspExperimental::class)
-    private fun makeFile(
+
+    private fun handleAnnotatedOrThrow(
+        prop: KSPropertyDeclaration,
+        annotation: ExcifyOptionalOrThrow,
+        tools: ProcessingTools
+    ) {
+
+        val fileBuilder = tools.getFileSpecBuilderFor(prop)
+        fileBuilder.addImport(
+            prop.packageName.asString(),
+            prop.simpleName.asString()
+        )
+
+        val typeClassName = when (val type = annotation.findType()) {
+            is KSType -> type.toClassName()
+            is KClass<*> -> type.asClassName()
+            else -> throw Exception("Can`t resolve type")
+        }
+
+        fileBuilder
+            .addFunction(
+                FunSpec.builder(resolveOrThrowMethodName(prop, annotation))
+                    .receiver(
+                        Optional::class.asClassName().parameterizedBy(
+                            typeClassName
+                        )
+                    )
+                    .returns(typeClassName)
+                    .addCode(
+                        CodeBlock
+                            .builder()
+                            .beginControlFlow("return run") // because of bad kotlinpoet wired formatting
+                            .beginControlFlow("orElseThrow")
+                            .addStatement("%L", prop)
+                            .endControlFlow()
+                            .endControlFlow()
+                            .build()
+
+                    )
+                    .build()
+            )
+    }
+
+    /**
+     * Generate .userNotFound like methods
+     */
+    private fun handleAnnotatedProperty(
+        prop: KSPropertyDeclaration,
+        annotation: ExcifyCachedException,
+        tools: ProcessingTools
+    ) {
+        val methodName = resolveGetMethodName(prop, annotation)
+
+        val classDeclaration = run {
+            val propTypeName = prop.type.resolve().toClassName().canonicalName
+            tools.resolver.getClassDeclarationByName(propTypeName) ?: throw AutoLoggingException(
+                "Can`t find class by name $propTypeName",
+                logger
+            )
+        }
+
+        val companionObject = classDeclaration.findCompanionObjectOrThrow(logger).toClassName()
+        val className = classDeclaration.toClassName()
+
+        val fileBuilder = tools.getFileSpecBuilderFor(prop)
+        fileBuilder.addImport(
+            prop.packageName.asString(),
+            prop.simpleName.asString()
+        )
+
+        // making extension method
+        fileBuilder
+            .addFunction(
+                FunSpec.builder(
+                    methodName
+                )
+                    .receiver(companionObject)
+                    .returns(className)
+                    .addStatement("return %L", prop)
+                    .build()
+            )
+
+    }
+
+    /**
+     * Generate cached .get method for no args constructor
+     */
+    private fun handleAnnotatedClass(
+        klass: KSClassDeclaration, annotation: ExcifyCachedException, tools: ProcessingTools
+    ) {
+
+        val companionObject = klass.findCompanionObjectOrThrow(logger).toClassName()
+
+        val className = klass.toClassName()
+        val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
+
+        if (noArgsConstructor == null) {
+            logger.info("No args constructor not found for $klass but caching requested")
+            throw Exception("$klass don`t no args constructor")
+        }
+
+        tools.getFileSpecBuilderFor(klass)
+            .addProperty(
+                PropertySpec.builder("cachedException", className, listOf(KModifier.PRIVATE)).mutable(false)
+                    .initializer("%T()", className).build()
+            ).addFunction(FunSpec.builder(annotation.methodName.ifBlank { "get" }).receiver(companionObject)
+                .also { funcBuilder ->
+                    noArgsConstructor.parameters.forEach { param ->
+                        funcBuilder.addParameter(
+                            ParameterSpec.builder(
+                                name = param.name!!.getShortName(),
+                                type = param.type.toTypeName(),
+                                modifiers = param.asModifiers()
+                            ).build()
+                        )
+                    }
+                }.returns(className).let { builder ->
+                    val returnStatement = "return cachedException"
+                    builder.addStatement(returnStatement)
+                }.build()
+            )
+    }
+}
+
+class BuilderProcessorProvider : SymbolProcessorProvider {
+    override fun create(
+        environment: SymbolProcessorEnvironment
+    ): SymbolProcessor {
+        return ExcifyProcessor(environment.codeGenerator, environment.logger)
+    }
+}
+
+/*
+@OptIn(KspExperimental::class)
+    private fun handleAnnotatedClass(
         klass: KSClassDeclaration,
-        annotation: ExcifyException,
-        cachedExceptions: List<KSPropertyDeclaration>,
-        orThrows: List<KSPropertyDeclaration>
-    ): FileSpec {
-        val (fileBuilder, className) = makeFileSpecBuilderFor(klass)
+        annotation: ExcifyCachedException,
+        cachedExceptions: Sequence<KSPropertyDeclaration>,
+        orThrows: Sequence<KSPropertyDeclaration>
+    ) {
         val companionObject = klass.findCompanionObject()?.toClassName()
             ?: run {
                 logger.error("$klass don`t have companion object")
                 throw Exception("$klass don`t have companion object")
             }
 
-        /**
-         * Building get/make method returning pre constructed object
-         */
-        var noArgsConstructorCached = false
-        if (annotation.cacheNoArgs) {
-            val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
+        val (fileBuilder, className) = makeFileSpecBuilderFor(klass)
 
-            if (noArgsConstructor == null) {
-                logger.info("No args constructor not found for $klass but caching requested")
-            } else {
-                fileBuilder
-                    .addProperty(
-                        PropertySpec.builder("cachedException", className, listOf(KModifier.PRIVATE))
-                            .mutable(false)
-                            .initializer("%T()", className)
-                            .build()
-                    )
-                    .addFunction(
-                        FunSpec.builder(annotation.cachedGetName.ifBlank { "get" })
-                            .receiver(companionObject).also { funcBuilder ->
-                                noArgsConstructor.parameters.forEach { param ->
-                                    funcBuilder.addParameter(
-                                        ParameterSpec.builder(
-                                            name = param.name!!.getShortName(),
-                                            type = param.type.toTypeName(),
-                                            modifiers = param.asModifiers()
-                                        ).build()
-                                    )
-                                }
-                            }
-                            .returns(className).let { builder ->
-                                val returnStatement = "return cachedException"
-                                builder.addStatement(returnStatement)
-                            }.build()
-                    )
-                noArgsConstructorCached = true
-            }
+        /**
+         * Building get method returning pre constructed object
+         */
+
+        val noArgsConstructor = klass.getConstructors().firstOrNull { it.parameters.isEmpty() }
+
+        if (noArgsConstructor == null) {
+            logger.info("No args constructor not found for $klass but caching requested")
+            throw Exception("$klass don`t no args constructor")
         }
 
-        /**
-         * making make methods with for all constructors
-         */
         fileBuilder
-            .apply {
-                val targetConstructors = klass.getConstructors()
-                    .let { constructors ->
-                        if (noArgsConstructorCached)
-                            constructors.filter { it.parameters.isNotEmpty() }
-                        else
-                            constructors
-                    }
-
-                targetConstructors.forEach { constructor ->
-                    addFunction(FunSpec.builder("make").receiver(companionObject).also { funcBuilder ->
-
-                        constructor.parameters.forEach { param ->
+            .addProperty(
+                PropertySpec.builder("cachedException", className, listOf(KModifier.PRIVATE))
+                    .mutable(false)
+                    .initializer("%T()", className)
+                    .build()
+            )
+            .addFunction(
+                FunSpec.builder(annotation.methodName.ifBlank { "get" })
+                    .receiver(companionObject).also { funcBuilder ->
+                        noArgsConstructor.parameters.forEach { param ->
                             funcBuilder.addParameter(
                                 ParameterSpec.builder(
                                     name = param.name!!.getShortName(),
@@ -171,23 +255,13 @@ class ExcifyProcessor(
                                 ).build()
                             )
                         }
+                    }
+                    .returns(className).let { builder ->
+                        val returnStatement = "return cachedException"
+                        builder.addStatement(returnStatement)
+                    }.build()
+            )
 
-                    }.returns(className).let { funcBuilder ->
-                        val returnStatement = buildString {
-                            append("return %T(")
-
-                            constructor.parameters.forEach { param ->
-                                append(param.name!!.getShortName())
-                                append(", ") // kotlin don`t care
-                            }
-
-                            append(")")
-                        }
-
-                        funcBuilder.addStatement(returnStatement, className)
-                    }.build())
-                }
-            }
 
         /**
          * making extension methods for cached objects (ExcifyCachedException)
@@ -260,12 +334,4 @@ class ExcifyProcessor(
             }
         return fileBuilder.build()
     }
-}
-
-class BuilderProcessorProvider : SymbolProcessorProvider {
-    override fun create(
-        environment: SymbolProcessorEnvironment
-    ): SymbolProcessor {
-        return ExcifyProcessor(environment.codeGenerator, environment.logger)
-    }
-}
+ */
