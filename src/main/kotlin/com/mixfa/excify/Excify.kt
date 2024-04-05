@@ -20,10 +20,9 @@ class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
  * Annotations
  */
 
-
 /**
- * generates .userNameNotFound for annotated properties
- * generates .get for annotated classes
+ * Generates .userNameNotFound for annotated properties
+ * Generates .get for annotated classes
  */
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.PROPERTY, AnnotationTarget.CLASS)
@@ -31,13 +30,12 @@ annotation class ExcifyCachedException(
     val methodName: String = ""
 )
 
-
-
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.PROPERTY)
 annotation class ExcifyOptionalOrThrow(
     val type: KClass<*>,
-    val methodName:String = ""
+    val methodName:String = "",
+    val makeForNullable: Boolean = true
 )
 
 /**

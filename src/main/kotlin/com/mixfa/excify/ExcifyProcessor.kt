@@ -77,7 +77,9 @@ class ExcifyProcessor(
         return emptyList()
     }
 
-
+    /**
+     * Generate orThrow
+     */
     private fun handleAnnotatedOrThrow(
         prop: KSPropertyDeclaration,
         annotation: ExcifyOptionalOrThrow,
@@ -96,6 +98,7 @@ class ExcifyProcessor(
             else -> throw Exception("Can`t resolve type")
         }
 
+        // for Optional<Type>
         fileBuilder
             .addFunction(
                 FunSpec.builder(resolveOrThrowMethodName(prop, annotation))
@@ -118,6 +121,24 @@ class ExcifyProcessor(
                     )
                     .build()
             )
+
+        // for Type?
+        if (annotation.makeForNullable) {
+            fileBuilder
+                .addFunction(
+                    FunSpec.builder(resolveOrThrowMethodName(prop, annotation))
+                        .receiver(typeClassName.copy(nullable = true))
+                        .returns(typeClassName)
+                        .addCode(
+                            CodeBlock
+                                .builder()
+                                .addStatement("return this ?: throw %L", prop)
+                                .build()
+
+                        )
+                        .build()
+                )
+        }
     }
 
     /**
