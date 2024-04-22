@@ -14,7 +14,7 @@ dependencies {
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))
 
-    implementation("io.arrow-kt:arrow-core:1.2.1")
+//    implementation("io.arrow-kt:arrow-core:1.2.1")
 
     implementation("com.squareup:kotlinpoet:1.16.0")
     implementation("com.squareup:kotlinpoet-ksp:1.16.0")

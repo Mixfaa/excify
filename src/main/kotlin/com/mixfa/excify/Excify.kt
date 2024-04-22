@@ -1,7 +1,5 @@
 package com.mixfa.excify
-import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
+
 import com.fasterxml.jackson.core.JsonGenerator
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializerProvider
@@ -30,41 +28,44 @@ annotation class ExcifyCachedException(
     val methodName: String = ""
 )
 
+/**
+ * Generates .orThrow for Optional<T> receiver or nullable receiver
+ */
 @Retention(AnnotationRetention.SOURCE)
 @Target(AnnotationTarget.PROPERTY)
 annotation class ExcifyOptionalOrThrow(
     val type: KClass<*>,
-    val methodName:String = "",
+    val methodName: String = "",
     val makeForNullable: Boolean = true
 )
 
 /**
  * Arrow`s Either
  */
-typealias EitherError<T> = Either<FastThrowable, T>
-
-fun <T> EitherError<T>.orThrow(): T = when (this) {
-    is Either.Left -> throw this.value
-    is Either.Right -> this.value
-}
-
-/**
- * excify scopes
- */
-object Excify {
-    inline fun <reified TargetType> rethrow(block: () -> Any): TargetType = when (val returnedValue = block()) {
-        is TargetType -> returnedValue
-        is FastThrowable -> throw returnedValue
-        else -> throw UnknownFastThrowable(returnedValue)
-    }
-
-    inline fun <reified TargetType> wrap(block: () -> Any): EitherError<TargetType> =
-        when (val returnedValue = block()) {
-            is TargetType -> returnedValue.right()
-            is FastThrowable -> returnedValue.left()
-            else -> UnknownFastThrowable(returnedValue).left()
-        }
-}
+//typealias EitherError<T> = Either<FastThrowable, T>
+//
+//fun <T> EitherError<T>.orThrow(): T = when (this) {
+//    is Either.Left -> throw this.value
+//    is Either.Right -> this.value
+//}
+//
+///**
+// * excify scopes
+// */
+//object Excify {
+//    inline fun <reified TargetType> rethrow(block: () -> Any): TargetType = when (val returnedValue = block()) {
+//        is TargetType -> returnedValue
+//        is FastThrowable -> throw returnedValue
+//        else -> throw UnknownFastThrowable(returnedValue)
+//    }
+//
+//    inline fun <reified TargetType> wrap(block: () -> Any): EitherError<TargetType> =
+//        when (val returnedValue = block()) {
+//            is TargetType -> returnedValue.right()
+//            is FastThrowable -> returnedValue.left()
+//            else -> UnknownFastThrowable(returnedValue).left()
+//        }
+//}
 
 /**
  * Fasterxml
