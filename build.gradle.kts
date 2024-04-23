@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm") version "1.9.23"
     id("com.google.devtools.ksp") version "1.9.23-1.0.19"
+    id("maven-publish")
 }
 
 group = "com.mixfa"
