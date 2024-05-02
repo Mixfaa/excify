@@ -10,10 +10,7 @@ import kotlin.reflect.KClass
 /**
  * fast throwable class (no stack trace)
  */
-open class FastThrowable(msg: String) : Throwable(msg, null, true, false)
-
-class UnknownFastThrowable(val value: Any) : FastThrowable(value.toString())
-
+open class FastException(msg: String) : Throwable(msg, null, true, false)
 /**
  * Annotations
  */
@@ -40,38 +37,10 @@ annotation class ExcifyOptionalOrThrow(
 )
 
 /**
- * Arrow`s Either
- */
-//typealias EitherError<T> = Either<FastThrowable, T>
-//
-//fun <T> EitherError<T>.orThrow(): T = when (this) {
-//    is Either.Left -> throw this.value
-//    is Either.Right -> this.value
-//}
-//
-///**
-// * excify scopes
-// */
-//object Excify {
-//    inline fun <reified TargetType> rethrow(block: () -> Any): TargetType = when (val returnedValue = block()) {
-//        is TargetType -> returnedValue
-//        is FastThrowable -> throw returnedValue
-//        else -> throw UnknownFastThrowable(returnedValue)
-//    }
-//
-//    inline fun <reified TargetType> wrap(block: () -> Any): EitherError<TargetType> =
-//        when (val returnedValue = block()) {
-//            is TargetType -> returnedValue.right()
-//            is FastThrowable -> returnedValue.left()
-//            else -> UnknownFastThrowable(returnedValue).left()
-//        }
-//}
-
-/**
  * Fasterxml
  */
-class FastThrowableSerializer : StdSerializer<FastThrowable>(FastThrowable::class.java) {
-    override fun serialize(value: FastThrowable, gen: JsonGenerator, provider: SerializerProvider) {
+class FastThrowableSerializer : StdSerializer<FastException>(FastException::class.java) {
+    override fun serialize(value: FastException, gen: JsonGenerator, provider: SerializerProvider) {
         gen.writeStartObject()
 
         val localizedMessage = value.localizedMessage
