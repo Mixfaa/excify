@@ -13,10 +13,10 @@ Example 1
 ```kotlin
 // exception class
 /**
- * FastThrowable - Throwable without stacktrace writing
+ * FastException- Throwable without stacktrace writing
  */
 
-class NotFoundException(subject: String) : FastThrowable("$subject not found!") {
+class NotFoundException(subject: String) : FastException("$subject not found!") {
     companion object
 }
 
