@@ -10,7 +10,10 @@ import kotlin.reflect.KClass
 /**
  * fast throwable class (no stack trace)
  */
-open class FastException(msg: String) : Throwable(msg, null, true, false)
+open class FastException(message: String, cause: Throwable?) : Throwable(message, cause, true, false) {
+    constructor(message: String) : this(message, null)
+    constructor(cause: Throwable) : this(cause.message ?: "", cause)
+}
 /**
  * Annotations
  */
